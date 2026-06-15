@@ -392,8 +392,11 @@ class App:
     def __init__(self, master):
         self.master = master
         master.title(STRINGS["app_title"])
-        icon = tk.PhotoImage(file="icon.png")
-        master.iconphoto(False, icon)
+        try:
+            icon = tk.PhotoImage(file="icon.png")
+            master.iconphoto(False, icon)
+        except Exception:
+            pass
         self.files = []
         self.cancel_event = threading.Event()
         self.error_occurred = False
@@ -715,6 +718,10 @@ if __name__ == '__main__':
     if args.input:
         run_headless(args.input, settings)
     else:
-        root = tk.Tk()
-        app = App(root)
-        root.mainloop()
+        try:
+            root = tk.Tk()
+            app = App(root)
+            root.mainloop()
+        except Exception as e:
+            messagebox.showerror("Startup Error", str(e))
+            raise
