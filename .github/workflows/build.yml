@@ -23,7 +23,7 @@ jobs:
 
       - name: Build with Nuitka
         run: |
-          python -m nuitka FunscriptFlow.pyw --standalone --enable-plugin=tk-inter --windows-disable-console --windows-icon-from-ico=icon.ico
+          python -m nuitka FunscriptFlow.pyw --standalone --enable-plugin=tk-inter --windows-console-mode=disable --windows-icon-from-ico=icon.ico --assume-yes-for-downloads
 
       - name: Bundle runtime files
         run: |
