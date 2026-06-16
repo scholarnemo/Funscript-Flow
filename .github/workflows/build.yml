@@ -38,7 +38,7 @@ jobs:
           copy strings.json FunscriptFlow.dist\strings.json
           copy readme.txt   FunscriptFlow.dist\readme.txt
           copy icon.png      FunscriptFlow.dist\icon.png
-          if exist detector.onnx copy detector.onnx FunscriptFlow.dist\detector.onnx
+          if (Test-Path detector.onnx) { copy detector.onnx FunscriptFlow.dist\detector.onnx }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
