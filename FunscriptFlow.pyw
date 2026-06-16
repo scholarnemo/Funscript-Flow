@@ -24,18 +24,16 @@ try:
     from tkinter import filedialog, messagebox
     import tkinter.ttk as ttk
     try:
-        # Register exe dir and any subdirs containing onnx DLLs for native library loading
-        if hasattr(os, 'add_dll_directory'):
-            os.add_dll_directory(EXE_DIR)
-            for root, dirs, files in os.walk(EXE_DIR):
-                for f in files:
-                    if f.endswith('.dll') and 'onnx' in f.lower():
-                        try:
-                            os.add_dll_directory(root)
-                        except Exception:
-                            pass
-                        break
-
+        # Explicitly preload onnxruntime native DLLs before Python import
+        _capi = os.path.join(EXE_DIR, "onnxruntime", "capi")
+        if os.path.isdir(_capi):
+            import ctypes as _ctypes
+            for _dll in os.listdir(_capi):
+                if _dll.endswith(".dll"):
+                    try:
+                        _ctypes.CDLL(os.path.join(_capi, _dll))
+                    except Exception:
+                        pass
         import onnxruntime as ort
         HAS_ONNX = True
     except Exception as e:
