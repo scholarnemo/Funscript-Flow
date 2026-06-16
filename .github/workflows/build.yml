@@ -25,7 +25,7 @@ jobs:
         run: |
           python -m nuitka FunscriptFlow.pyw --standalone --enable-plugin=tk-inter --windows-console-mode=disable --windows-icon-from-ico=icon.ico --assume-yes-for-downloads
 
-       - name: Copy decord native DLLs
+      - name: Copy decord native DLLs
         run: |
           $pydir = python -c "import decord, os; print(os.path.dirname(decord.__file__))"
           New-Item -ItemType Directory -Force -Path FunscriptFlow.dist\decord\
