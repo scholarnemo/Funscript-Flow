@@ -19,9 +19,27 @@ try:
     from tkinter import filedialog, messagebox
     import tkinter.ttk as ttk
     try:
+        # Pre-load native onnxruntime DLLs from exe directory before import
+        import ctypes as _ctypes
+        _dll_dir = EXE_DIR
+        for _f in os.listdir(_dll_dir):
+            if _f.startswith("onnxruntime") and _f.endswith(".dll"):
+                try:
+                    _ctypes.CDLL(os.path.join(_dll_dir, _f))
+                except Exception:
+                    pass
+        # Also check onnxruntime/capi subdirectory
+        _capi_dir = os.path.join(_dll_dir, "onnxruntime", "capi")
+        if os.path.isdir(_capi_dir):
+            for _f in os.listdir(_capi_dir):
+                if _f.endswith(".dll"):
+                    try:
+                        _ctypes.CDLL(os.path.join(_capi_dir, _f))
+                    except Exception:
+                        pass
         import onnxruntime as ort
         HAS_ONNX = True
-    except ImportError as e:
+    except Exception as e:
         err_msg = f"onnxruntime import failed: {e}\n"
         try:
             dll_files = [f for f in os.listdir(EXE_DIR) if "onnx" in f.lower()]
