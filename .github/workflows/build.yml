@@ -25,13 +25,19 @@ jobs:
         run: |
           python -m nuitka FunscriptFlow.pyw --standalone --enable-plugin=tk-inter --windows-console-mode=disable --windows-icon-from-ico=icon.ico --assume-yes-for-downloads
 
-      - name: Copy decord native DLLs
+       - name: Copy decord native DLLs
         run: |
           $pydir = python -c "import decord, os; print(os.path.dirname(decord.__file__))"
           New-Item -ItemType Directory -Force -Path FunscriptFlow.dist\decord\
           copy "$pydir\*.dll" FunscriptFlow.dist\decord\ -ErrorAction SilentlyContinue
           copy "$pydir\*.pyd" FunscriptFlow.dist\decord\ -ErrorAction SilentlyContinue
-          dir FunscriptFlow.dist\decord\
+
+      - name: Copy MSVC runtime DLLs (needed by onnxruntime)
+        run: |
+          $pyhome = python -c "import sys; print(sys.prefix)"
+          copy "$pyhome\vcruntime140.dll" FunscriptFlow.dist\ -ErrorAction SilentlyContinue
+          copy "$pyhome\vcruntime140_1.dll" FunscriptFlow.dist\ -ErrorAction SilentlyContinue
+          copy "$pyhome\msvcp140.dll" FunscriptFlow.dist\ -ErrorAction SilentlyContinue
 
       - name: Bundle runtime files
         run: |
