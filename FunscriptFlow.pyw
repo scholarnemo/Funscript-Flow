@@ -1,13 +1,31 @@
 #!/usr/bin/env python3
 
-import gc
-import os, math, threading, concurrent.futures, json, argparse, traceback, sys
-import numpy as np
-import cv2
-from decord import VideoReader, cpu
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import tkinter.ttk as ttk
+import sys, os, traceback, json, argparse  # stdlib only, safe to import
+
+STUB_LOG = os.path.join(os.path.dirname(sys.argv[0]) if sys.argv else ".", "startup.log")
+
+try:
+    import gc
+    import math, threading, concurrent.futures
+    import numpy as np
+    import cv2
+    from decord import VideoReader, cpu
+    import tkinter as tk
+    from tkinter import filedialog, messagebox
+    import tkinter.ttk as ttk
+except Exception:
+    try:
+        with open(STUB_LOG, "w") as f:
+            traceback.print_exc(file=f)
+    except Exception:
+        pass
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        messagebox.showerror("Import Error", traceback.format_exc())
+    except Exception:
+        pass
+    sys.exit(1)
 
 
 # ---------- Localization Strings ----------
