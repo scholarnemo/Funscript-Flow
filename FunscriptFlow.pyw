@@ -3,7 +3,12 @@
 import sys, os, traceback, json, argparse  # stdlib only, safe to import
 
 STUB_LOG = os.path.join(os.path.dirname(sys.argv[0]) if sys.argv else ".", "startup.log")
+EXE_DIR = os.path.dirname(sys.argv[0]) if sys.argv and os.path.dirname(sys.argv[0]) else "."
 
+# Nuitka puts DLLs in the exe directory — add to PATH so native library loaders find them
+os.environ["PATH"] = EXE_DIR + os.pathsep + os.environ.get("PATH", "")
+
+HAS_ONNX = False
 try:
     import gc
     import math, threading, concurrent.futures
@@ -16,8 +21,19 @@ try:
     try:
         import onnxruntime as ort
         HAS_ONNX = True
-    except ImportError:
-        HAS_ONNX = False
+    except ImportError as e:
+        err_msg = f"onnxruntime import failed: {e}\n"
+        try:
+            dll_files = [f for f in os.listdir(EXE_DIR) if "onnx" in f.lower()]
+            err_msg += f"onnx-* files in exe dir: {dll_files}"
+        except Exception:
+            pass
+        try:
+            with open(STUB_LOG, "a") as f:
+                f.write(err_msg)
+        except Exception:
+            pass
+
 except Exception:
     try:
         with open(STUB_LOG, "w") as f:
