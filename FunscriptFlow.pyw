@@ -7,6 +7,11 @@ EXE_DIR = os.path.dirname(sys.argv[0]) if sys.argv and os.path.dirname(sys.argv[
 
 # Nuitka puts DLLs in the exe directory — add to PATH so native library loaders find them
 os.environ["PATH"] = EXE_DIR + os.pathsep + os.environ.get("PATH", "")
+if hasattr(os, 'add_dll_directory'):
+    try:
+        os.add_dll_directory(EXE_DIR)
+    except Exception:
+        pass
 
 HAS_ONNX = False
 try:
@@ -19,36 +24,30 @@ try:
     from tkinter import filedialog, messagebox
     import tkinter.ttk as ttk
     try:
-        # Pre-load native onnxruntime DLLs from exe directory before import
-        import ctypes as _ctypes
-        _dll_dir = EXE_DIR
-        for _f in os.listdir(_dll_dir):
-            if _f.startswith("onnxruntime") and _f.endswith(".dll"):
-                try:
-                    _ctypes.CDLL(os.path.join(_dll_dir, _f))
-                except Exception:
-                    pass
-        # Also check onnxruntime/capi subdirectory
-        _capi_dir = os.path.join(_dll_dir, "onnxruntime", "capi")
-        if os.path.isdir(_capi_dir):
-            for _f in os.listdir(_capi_dir):
-                if _f.endswith(".dll"):
-                    try:
-                        _ctypes.CDLL(os.path.join(_capi_dir, _f))
-                    except Exception:
-                        pass
+        # Register exe dir and any subdirs containing onnx DLLs for native library loading
+        if hasattr(os, 'add_dll_directory'):
+            os.add_dll_directory(EXE_DIR)
+            for root, dirs, files in os.walk(EXE_DIR):
+                for f in files:
+                    if f.endswith('.dll') and 'onnx' in f.lower():
+                        try:
+                            os.add_dll_directory(root)
+                        except Exception:
+                            pass
+                        break
+
         import onnxruntime as ort
         HAS_ONNX = True
     except Exception as e:
-        err_msg = f"onnxruntime import failed: {e}\n"
-        try:
-            dll_files = [f for f in os.listdir(EXE_DIR) if "onnx" in f.lower()]
-            err_msg += f"onnx-* files in exe dir: {dll_files}"
-        except Exception:
-            pass
+        _onnx_files = []
+        for root, dirs, files in os.walk(EXE_DIR):
+            for f in files:
+                if 'onnx' in f.lower():
+                    _onnx_files.append(os.path.join(root, f))
+        err_msg = f"onnxruntime import failed: {e}\nFiles: {_onnx_files[:20]}"
         try:
             with open(STUB_LOG, "a") as f:
-                f.write(err_msg)
+                f.write(err_msg + "\n")
         except Exception:
             pass
 
