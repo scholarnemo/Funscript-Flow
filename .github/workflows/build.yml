@@ -25,11 +25,17 @@ jobs:
         run: |
           python -m nuitka FunscriptFlow.pyw --standalone --enable-plugin=tk-inter --windows-console-mode=disable --windows-icon-from-ico=icon.ico --assume-yes-for-downloads
 
+      - name: Copy decord native DLLs
+        run: |
+          $pydir = python -c "import decord, os; print(os.path.dirname(decord.__file__))"
+          copy "$pydir\*.dll" FunscriptFlow.dist\decord\
+          copy "$pydir\*.pyd" FunscriptFlow.dist\decord\
+
       - name: Bundle runtime files
         run: |
-          copy strings.json FunscriptFlow.dist\
-          copy readme.txt   FunscriptFlow.dist\
-          copy icon.png      FunscriptFlow.dist\
+          copy strings.json FunscriptFlow.dist\strings.json
+          copy readme.txt   FunscriptFlow.dist\readme.txt
+          copy icon.png      FunscriptFlow.dist\icon.png
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
