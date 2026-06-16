@@ -26,16 +26,28 @@ try:
     try:
         # Explicitly preload onnxruntime native DLLs before Python import
         _capi = os.path.join(EXE_DIR, "onnxruntime", "capi")
+        _preload_log = []
         if os.path.isdir(_capi):
             import ctypes as _ctypes
-            for _dll in os.listdir(_capi):
-                if _dll.endswith(".dll"):
+            _dll_order = ["onnxruntime_providers_shared.dll", "onnxruntime.dll"]
+            for _dll_name in _dll_order:
+                _dll_path = os.path.join(_capi, _dll_name)
+                if os.path.exists(_dll_path):
                     try:
-                        _ctypes.CDLL(os.path.join(_capi, _dll))
-                    except Exception:
-                        pass
-        import onnxruntime as ort
-        HAS_ONNX = True
+                        _ctypes.CDLL(_dll_path)
+                        _preload_log.append(f"OK: {_dll_name}")
+                    except Exception as _e:
+                        _preload_log.append(f"FAIL {_dll_name}: {_e}")
+        try:
+            import onnxruntime as ort
+            _preload_log.append("OK: import onnxruntime")
+            HAS_ONNX = True
+        except Exception as _e:
+            _preload_log.append(f"FAIL import onnxruntime: {_e}")
+        with open(STUB_LOG, "a") as f:
+            f.write("--- onnx preload ---\n")
+            for _line in _preload_log:
+                f.write(_line + "\n")
     except Exception as e:
         _onnx_files = []
         for root, dirs, files in os.walk(EXE_DIR):
