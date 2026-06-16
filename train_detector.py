@@ -13,7 +13,7 @@ Usage:
     # Option B: use a pre-labeled dataset (if available)
     python train_detector.py --dataset nsfw-default --epochs 50
 
-    # Option C: download a pre-trained model from HuggingFace
+    # Option C: download a pre-trained model from NudeNet (recommended)
     python train_detector.py --download
 
 Output: detector.onnx in current directory
@@ -55,25 +55,35 @@ def train(yaml_path, epochs, imgsz):
         print(f"WARNING: ONNX model not found at {src}, check training output.")
 
 
-def download_pretrained():
+def download_pretrained(variant="320n"):
     """
-    Attempt to download a pre-trained model from HuggingFace.
-    Update the repo/URL as better models become available.
+    Download NudeNet pre-trained ONNX model.
+    NudeNet detects MALE_GENITALIA_EXPOSED (class 14), FACE_FEMALE (1),
+    FACE_MALE (12), and 15 other body/exposure classes.
+
+    Variants:
+      320n - YOLOv8n backbone, 320x320 input, ~6MB (fast, recommended)
+      640m - YOLOv8m backbone, 640x640 input, ~25MB (more accurate)
     """
-    try:
-        from huggingface_hub import hf_hub_download
-    except ImportError:
-        print("pip install huggingface_hub first")
+    import urllib.request
+
+    urls = {
+        "320n": "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/320n.onnx",
+        "640m": "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.onnx",
+    }
+    url = urls.get(variant)
+    if not url:
+        print(f"Unknown variant: {variant}. Choose from: {list(urls.keys())}")
         sys.exit(1)
 
-    # Placeholder — replace with actual repo when available
-    repo = "USERNAME/nsfw-detector"
-    filename = "yolov8n-detector.onnx"
-
-    print(f"Downloading {filename} from {repo}...")
-    path = hf_hub_download(repo_id=repo, filename=filename)
-    shutil.copy(path, "detector.onnx")
-    print(f"Done: {os.path.abspath('detector.onnx')}")
+    outfile = f"{variant}.onnx"
+    print(f"Downloading NudeNet {variant} model...")
+    print(f"URL: {url}")
+    urllib.request.urlretrieve(url, outfile)
+    size_mb = os.path.getsize(outfile) / (1024 * 1024)
+    print(f"Downloaded: {outfile} ({size_mb:.1f} MB)")
+    print(f"\nCopy to repo: cp {outfile} /path/to/FunscriptFlow/{outfile}")
+    print(f"Then the detector will auto-detect it as a NudeNet model.")
 
 
 def create_template_dataset():
@@ -104,7 +114,8 @@ if __name__ == "__main__":
     parser.add_argument("--data", help="Path to data.yaml")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--imgsz", type=int, default=256)
-    parser.add_argument("--download", action="store_true", help="Download pre-trained model")
+    parser.add_argument("--download", action="store_true", help="Download pre-trained NudeNet model")
+    parser.add_argument("--variant", default="320n", choices=["320n", "640m"], help="NudeNet model variant (default: 320n)")
     parser.add_argument("--template", action="store_true", help="Create template dataset structure")
     args = parser.parse_args()
 
@@ -113,7 +124,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.download:
-        download_pretrained()
+        download_pretrained(args.variant)
         sys.exit(0)
 
     if args.data:

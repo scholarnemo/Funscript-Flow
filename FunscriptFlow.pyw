@@ -134,9 +134,19 @@ def radial_motion_weighted(flow, center, is_cut, pov_mode=False, balance_global=
 
 
 class Detector:
+    # NudeNet 320n class indices:
+    # 14 = MALE_GENITALIA_EXPOSED, 4 = FEMALE_GENITALIA_EXPOSED
+    # 1 = FACE_FEMALE, 12 = FACE_MALE
+    NUDENET_PENIS_CLASSES = {4, 14}
+    NUDENET_FACE_CLASSES = {1, 12}
+    # Custom model class indices (override when using a custom-trained model)
+    CUSTOM_PENIS_CLASSES = {0}
+    CUSTOM_FACE_CLASSES = {1}
+
     def __init__(self, model_path="detector.onnx"):
         self.model = None
         self.enabled = False
+        self.use_nudenet = "nudenet" in model_path.lower() or "320n" in model_path.lower() or "640m" in model_path.lower()
         if not HAS_ONNX or not os.path.exists(model_path):
             return
         try:
@@ -163,6 +173,8 @@ class Detector:
             h, w = frame_gray.shape
             penis_box = None
             face_box = None
+            penis_classes = self.NUDENET_PENIS_CLASSES if self.use_nudenet else self.CUSTOM_PENIS_CLASSES
+            face_classes = self.NUDENET_FACE_CLASSES if self.use_nudenet else self.CUSTOM_FACE_CLASSES
             for det in outputs[0]:
                 x1, y1, x2, y2, conf, cls = det[:6]
                 x1, y1 = int(x1 * w / self.input_size[0]), int(y1 * h / self.input_size[1])
@@ -171,10 +183,12 @@ class Detector:
                 if conf < 0.4:
                     continue
                 box = (max(0, x1), max(0, y1), min(w, x2), min(h, y2), conf)
-                if cls == 0:
-                    penis_box = box
-                elif cls == 1 and conf > 0.3:
-                    face_box = box
+                if cls in penis_classes:
+                    if penis_box is None or conf > penis_box[4]:
+                        penis_box = box
+                elif cls in face_classes:
+                    if face_box is None or conf > face_box[4]:
+                        face_box = box
             return penis_box, face_box
         except Exception:
             return None, None
@@ -336,7 +350,19 @@ def process_video(video_path, params, log_func, progress_callback=None, cancel_f
 
     detector = None
     detection_enabled = params.get("detection_enabled", True)
-    detector_model = os.path.join(os.path.dirname(sys.argv[0]) if sys.argv else ".", "detector.onnx")
+    exe_dir = os.path.dirname(sys.argv[0]) if sys.argv else "."
+    model_candidates = [
+        os.path.join(exe_dir, "detector.onnx"),
+        os.path.join(exe_dir, "320n.onnx"),
+        os.path.join(exe_dir, "640m.onnx"),
+    ]
+    detector_model = None
+    for candidate in model_candidates:
+        if os.path.exists(candidate):
+            detector_model = candidate
+            break
+    if detector_model is None:
+        detector_model = model_candidates[0]  # default, will fail gracefully
     if detection_enabled and HAS_ONNX:
         detector = Detector(detector_model)
         if detector.enabled:
