@@ -24,9 +24,10 @@ try:
     from tkinter import filedialog, messagebox
     import tkinter.ttk as ttk
     try:
-        # Explicitly preload onnxruntime native DLLs before Python import
+        # Load onnxruntime via C API directly, bypassing Python .pyd import
         _capi = os.path.join(EXE_DIR, "onnxruntime", "capi")
         _preload_log = []
+        _ort = None
         if os.path.isdir(_capi):
             import ctypes as _ctypes
             _dll_order = ["onnxruntime_providers_shared.dll", "onnxruntime.dll"]
@@ -38,16 +39,22 @@ try:
                         _preload_log.append(f"OK: {_dll_name}")
                     except Exception as _e:
                         _preload_log.append(f"FAIL {_dll_name}: {_e}")
-        try:
-            import onnxruntime as ort
-            _preload_log.append("OK: import onnxruntime")
-            HAS_ONNX = True
-        except Exception as _e:
-            _preload_log.append(f"FAIL import onnxruntime: {_e}")
+            # Try Python import first, fall back to C API
+            try:
+                import onnxruntime as ort
+                _preload_log.append("OK: import onnxruntime")
+                HAS_ONNX = True
+            except Exception as _e:
+                _preload_log.append(f"FAIL import onnxruntime: {_e}")
+                _ort = _ctypes.CDLL(os.path.join(_capi, "onnxruntime.dll"))
         with open(STUB_LOG, "a") as f:
             f.write("--- onnx preload ---\n")
             for _line in _preload_log:
                 f.write(_line + "\n")
+            f.write("--- all DLLs in exe dir ---\n")
+            for _f in sorted(os.listdir(EXE_DIR)):
+                if _f.lower().endswith(('.dll', '.pyd')):
+                    f.write(_f + "\n")
     except Exception as e:
         _onnx_files = []
         for root, dirs, files in os.walk(EXE_DIR):
