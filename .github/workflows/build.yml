@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install numpy decord opencv-python opencv-contrib-python nuitka
+          pip install numpy decord opencv-python opencv-contrib-python onnxruntime nuitka
 
       - name: Build with Nuitka
         run: |
@@ -38,6 +38,7 @@ jobs:
           copy strings.json FunscriptFlow.dist\strings.json
           copy readme.txt   FunscriptFlow.dist\readme.txt
           copy icon.png      FunscriptFlow.dist\icon.png
+          if exist detector.onnx copy detector.onnx FunscriptFlow.dist\detector.onnx
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
