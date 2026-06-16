@@ -13,6 +13,11 @@ try:
     import tkinter as tk
     from tkinter import filedialog, messagebox
     import tkinter.ttk as ttk
+    try:
+        import onnxruntime as ort
+        HAS_ONNX = True
+    except ImportError:
+        HAS_ONNX = False
 except Exception:
     try:
         with open(STUB_LOG, "w") as f:
@@ -128,6 +133,134 @@ def radial_motion_weighted(flow, center, is_cut, pov_mode=False, balance_global=
     return np.mean(weighted_dot)
 
 
+class Detector:
+    def __init__(self, model_path="detector.onnx"):
+        self.model = None
+        self.enabled = False
+        if not HAS_ONNX or not os.path.exists(model_path):
+            return
+        try:
+            self.model = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+            self.input_name = self.model.get_inputs()[0].name
+            input_shape = self.model.get_inputs()[0].shape
+            self.input_size = (int(input_shape[2]), int(input_shape[3]))
+            self.enabled = True
+        except Exception:
+            self.model = None
+            self.enabled = False
+
+    def detect(self, frame_gray):
+        if not self.enabled:
+            return None, None
+        try:
+            img = cv2.resize(frame_gray, self.input_size)
+            img = img.astype(np.float32) / 255.0
+            if len(img.shape) == 2:
+                img = np.stack([img, img, img], axis=-1)
+            img = np.transpose(img, (2, 0, 1))
+            img = np.expand_dims(img, axis=0)
+            outputs = self.model.run(None, {self.input_name: img})[0]
+            h, w = frame_gray.shape
+            penis_box = None
+            face_box = None
+            for det in outputs[0]:
+                x1, y1, x2, y2, conf, cls = det[:6]
+                x1, y1 = int(x1 * w / self.input_size[0]), int(y1 * h / self.input_size[1])
+                x2, y2 = int(x2 * w / self.input_size[0]), int(y2 * h / self.input_size[1])
+                cls = int(cls)
+                if conf < 0.4:
+                    continue
+                box = (max(0, x1), max(0, y1), min(w, x2), min(h, y2), conf)
+                if cls == 0:
+                    penis_box = box
+                elif cls == 1 and conf > 0.3:
+                    face_box = box
+            return penis_box, face_box
+        except Exception:
+            return None, None
+
+
+def flow_in_box(flow, box):
+    x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
+    x1, y1 = int(max(0, x1)), int(max(0, y1))
+    x2, y2 = int(min(flow.shape[1], x2)), int(min(flow.shape[0], y2))
+    if x2 <= x1 or y2 <= y1:
+        return 0.0
+    region = flow[y1:y2, x1:x2]
+    return np.mean(np.abs(region[..., 0] + region[..., 1]))
+
+
+def compute_detection_signal(flow_info, detections, pair_idx, center, mode_state, pov_mode, balance_global, effective_fps):
+    signal = 0.0
+    cut = flow_info["cut"]
+    
+    if not detections or pair_idx + 1 >= len(detections):
+        mode_state["current_mode"] = "legacy"
+        if not cut:
+            signal = radial_motion_weighted(flow_info["flow"], center, False, pov_mode, balance_global)
+        return signal, mode_state
+
+    det0 = detections[pair_idx]
+    det1 = detections[pair_idx + 1]
+    if det0 is None or det1 is None:
+        mode_state["idle_count"] = mode_state.get("idle_count", 0) + 1
+        if mode_state.get("idle_count", 0) > int(effective_fps):
+            mode_state["current_mode"] = "idle"
+            return 0.0, mode_state
+        if not cut:
+            signal = radial_motion_weighted(flow_info["flow"], center, False, pov_mode, balance_global)
+        mode_state["current_mode"] = "legacy"
+        return signal, mode_state
+
+    penis0, face0 = det0
+    penis1, face1 = det1
+    penis_present = penis0 is not None and penis1 is not None
+    face_present = face0 is not None and face1 is not None
+    both_present = penis_present and face_present
+
+    if both_present:
+        mode_state["dual_streak"] = mode_state.get("dual_streak", 0) + 1
+    else:
+        mode_state["dual_streak"] = 0
+
+    if mode_state.get("dual_streak", 0) >= 5:
+        d0 = _box_distance(penis0, face0)
+        d1 = _box_distance(penis1, face1)
+        if d0 > 0:
+            signal = (d1 - d0) / d0
+        else:
+            signal = 0.0
+        mode_state["current_mode"] = "dual-box"
+        mode_state["idle_count"] = 0
+        return signal, mode_state
+
+    if penis_present:
+        if mode_state.get("idle_count", 0) >= 3:
+            mode_state["idle_count"] = 0
+        signal = flow_in_box(flow_info["flow"], penis1)
+        mode_state["current_mode"] = "single-box"
+        mode_state["idle_count"] = 0
+        return signal, mode_state
+
+    mode_state["idle_count"] = mode_state.get("idle_count", 0) + 1
+    if mode_state.get("idle_count", 0) > int(effective_fps):
+        mode_state["current_mode"] = "idle"
+        return 0.0, mode_state
+
+    mode_state["current_mode"] = "legacy"
+    if not cut:
+        signal = radial_motion_weighted(flow_info["flow"], center, False, pov_mode, balance_global)
+    return signal, mode_state
+
+
+def _box_distance(box1, box2):
+    cx1 = (box1[0] + box1[2]) / 2
+    cy1 = (box1[1] + box1[3]) / 2
+    cx2 = (box2[0] + box2[2]) / 2
+    cy2 = (box2[1] + box2[3]) / 2
+    return math.sqrt((cx1 - cx2) ** 2 + (cy1 - cy2) ** 2)
+
+
 def precompute_flow_info(p0, p1, config):
     cut_threshold = config.get("cut_threshold", 7)
     
@@ -201,6 +334,20 @@ def process_video(video_path, params, log_func, progress_callback=None, cancel_f
 
     bracket_size = int(params.get("batch_size", 3000.0))
 
+    detector = None
+    detection_enabled = params.get("detection_enabled", True)
+    detector_model = os.path.join(os.path.dirname(sys.argv[0]) if sys.argv else ".", "detector.onnx")
+    if detection_enabled and HAS_ONNX:
+        detector = Detector(detector_model)
+        if detector.enabled:
+            log_func("Detection: enabled")
+        else:
+            log_func("Detection: model not found or failed to load, using legacy mode")
+    else:
+        log_func("Detection: disabled")
+
+    mode_state = {"dual_streak": 0, "idle_count": 0, "current_mode": "legacy"}
+
     final_flow_list = []
 
     next_batch = None
@@ -256,15 +403,25 @@ def process_video(video_path, params, log_func, progress_callback=None, cancel_f
             center = np.mean(center_list, axis=0)
             final_centers.append(center)
 
-        dot_futures = []
+        # Run detection on batch if enabled
+        detections = []
+        if detector and detector.enabled:
+            for f in frames_gray:
+                detections.append(detector.detect(f))
+
+        # Compute signals using detection when available
         for j, info in enumerate(precomputed):
-            dot_futures.append(ex.submit(radial_motion_weighted, info["flow"], final_centers[j], info["cut"], params.get("pov_mode", False), params.get("balance_global", True)))
-        dot_vals = [f.result() for f in dot_futures]
+            signal, mode_state = compute_detection_signal(
+                info, detections, j, final_centers[j],
+                mode_state, params.get("pov_mode", False),
+                params.get("balance_global", True), effective_fps)
+            final_flow_list.append((signal, info["cut"], frame_indices[j]))
 
-
-        for j, dot_val in enumerate(dot_vals):
-            is_cut   = precomputed[j]["cut"]
-            final_flow_list.append((dot_val, is_cut, frame_indices[j]))
+        # Display detection mode status in log
+        if detector and detector.enabled and detections:
+            modes = {"dual-box": 0, "single-box": 0, "legacy": 0, "idle": 0}
+            # Sample mode from last computed state
+            modes[mode_state.get("current_mode", "legacy")] = 1
 
         if progress_callback:
             prog = min(100, int(100 * (chunk_start + len(chunk)) / len(indices)))
@@ -447,6 +604,10 @@ class App:
         self.balance_global = tk.BooleanVar(value=True)
         chk_balance = tk.Checkbutton(mode_frame, text="Balance Global Motion", variable=self.balance_global)
         chk_balance.pack(side=tk.LEFT, padx=2)
+        self.detection_enabled = tk.BooleanVar(value=True)
+        chk_detect = tk.Checkbutton(mode_frame, text="Enable Detection", variable=self.detection_enabled)
+        chk_detect.pack(side=tk.LEFT, padx=2)
+        ToolTip(chk_detect, "Uses computer vision to track subject motion. Disable to use pure optical flow.")
         ToolTip(chk_balance, "If enabled, the script will try to cancel out camera motion. Disable it for scenes with no camera movement.")
         ToolTip(chk_pov, STRINGS["pov_mode_tooltip"])
         
@@ -463,6 +624,8 @@ class App:
         tk.Label(prog_frame, text=STRINGS["current_video_progress"]).pack(anchor=tk.W)
         self.video_progress = ttk.Progressbar(prog_frame, orient="horizontal", mode="determinate", maximum=100)
         self.video_progress.pack(fill=tk.X, padx=5, pady=2)
+        self.lbl_detect_status = tk.Label(prog_frame, text="Detector: N/A")
+        self.lbl_detect_status.pack(anchor=tk.W, padx=5)
         
         self.adv_frame = tk.LabelFrame(master, text=STRINGS["advanced_settings"])
         self.adv_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -558,6 +721,7 @@ class App:
         config["vr_mode"] = self.vr_mode.get()
         config["pov_mode"] = self.pov_mode.get()
         config["balance_global"] = self.balance_global.get()
+        config["detection_enabled"] = self.detection_enabled.get()
         
         config_path = "config.json"
         try:
@@ -581,6 +745,7 @@ class App:
                 self.vr_mode.set(config.get("vr_mode", False))
                 self.pov_mode.set(config.get("pov_mode", False))
                 self.balance_global.set(config.get("balance_global", True))
+                self.detection_enabled.set(config.get("detection_enabled", True))
                 
             except Exception as e:
                 messagebox.showwarning("Config Load", STRINGS["config_load_error"].format(error=str(e)))
@@ -621,6 +786,7 @@ class App:
             settings["vr_mode"] = self.vr_mode.get()
             settings["pov_mode"] = self.pov_mode.get()
             settings["balance_global"] = self.balance_global.get()
+            settings["detection_enabled"] = self.detection_enabled.get()
         except Exception as e:
             messagebox.showerror("Parameter Error", f"Invalid parameters: {e}")
             return
@@ -643,6 +809,12 @@ class App:
             return
         self.overall_progress.configure(value=0)
         self.video_progress.configure(value=0)
+        if settings.get("detection_enabled", True) and HAS_ONNX:
+            self.lbl_detect_status.config(text="Detector: enabled")
+        elif settings.get("detection_enabled", True):
+            self.lbl_detect_status.config(text="Detector: onnxruntime not installed")
+        else:
+            self.lbl_detect_status.config(text="Detector: disabled")
         disable_widgets_except(self.master, [self.btn_cancel])
         total_files = len(self.files)
         self.error_occurred = False
