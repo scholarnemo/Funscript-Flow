@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import gc
-import os, math, threading, concurrent.futures, json, argparse
+import os, math, threading, concurrent.futures, json, argparse, traceback, sys
 import numpy as np
 import cv2
 from decord import VideoReader, cpu
@@ -694,34 +694,39 @@ def run_headless(input_path, settings):
 
 # ---------- Main ----------
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Optical Flow to Funscript")
-    parser.add_argument("input", nargs="?", help="Input video file or folder")
-    parser.add_argument("--threads", type=int, default=8, help="Number of threads (default: 8)")
-    parser.add_argument("--detrend_window", type=float, default=2.0, help="Detrend window in seconds (default: 2.0)")
-    parser.add_argument("--norm_window", type=float, default=3.0, help="Normalization window in seconds (default: 3.0)")
-    parser.add_argument("--batch_size", type=int, default=3000, help="Batch size in frames (default: 3000)")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
-    parser.add_argument("--vr_mode", action="store_true", help="Enable VR Mode (if not set, non-VR mode is used)")
-    parser.add_argument("--pov_mode", action="store_true", help="Enable POV Mode (improves stability for POV videos)")
-    parser.add_argument("--disable_keyframe_reduction", action="store_false", help="Disable keyframe reduction")
-    args = parser.parse_args()
-    settings = {
-        "threads": args.threads,
-        "detrend_window": args.detrend_window,
-        "norm_window": args.norm_window,
-        "batch_size": args.batch_size,
-        "overwrite": args.overwrite,
-        "vr_mode": args.vr_mode,
-        "pov_mode": args.pov_mode,
-        "keyframe_reduction": not args.disable_keyframe_reduction
-    }
-    if args.input:
-        run_headless(args.input, settings)
-    else:
-        try:
+    try:
+        parser = argparse.ArgumentParser(description="Optical Flow to Funscript")
+        parser.add_argument("input", nargs="?", help="Input video file or folder")
+        parser.add_argument("--threads", type=int, default=8, help="Number of threads (default: 8)")
+        parser.add_argument("--detrend_window", type=float, default=2.0, help="Detrend window in seconds (default: 2.0)")
+        parser.add_argument("--norm_window", type=float, default=3.0, help="Normalization window in seconds (default: 3.0)")
+        parser.add_argument("--batch_size", type=int, default=3000, help="Batch size in frames (default: 3000)")
+        parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
+        parser.add_argument("--vr_mode", action="store_true", help="Enable VR Mode (if not set, non-VR mode is used)")
+        parser.add_argument("--pov_mode", action="store_true", help="Enable POV Mode (improves stability for POV videos)")
+        parser.add_argument("--disable_keyframe_reduction", action="store_false", help="Disable keyframe reduction")
+        args = parser.parse_args()
+        settings = {
+            "threads": args.threads,
+            "detrend_window": args.detrend_window,
+            "norm_window": args.norm_window,
+            "batch_size": args.batch_size,
+            "overwrite": args.overwrite,
+            "vr_mode": args.vr_mode,
+            "pov_mode": args.pov_mode,
+            "keyframe_reduction": not args.disable_keyframe_reduction
+        }
+        if args.input:
+            run_headless(args.input, settings)
+        else:
             root = tk.Tk()
             app = App(root)
             root.mainloop()
-        except Exception as e:
-            messagebox.showerror("Startup Error", str(e))
-            raise
+    except Exception:
+        err_log = os.path.join(os.path.dirname(sys.argv[0]), "startup.log")
+        with open(err_log, "w") as f:
+            traceback.print_exc(file=f)
+        try:
+            messagebox.showerror("Startup Error", traceback.format_exc())
+        except Exception:
+            pass
