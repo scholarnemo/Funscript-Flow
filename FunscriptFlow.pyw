@@ -36,16 +36,24 @@ try:
                     shutil.copy2(_src, _dst)
                     _preload_log.append(f"COPIED {_dll} -> capi")
             import ctypes as _ctypes
-            _dll_order = ["onnxruntime_providers_shared.dll", "onnxruntime.dll"]
-            for _dll_name in _dll_order:
-                _dll_path = os.path.join(_capi, _dll_name)
-                if os.path.exists(_dll_path):
-                    try:
-                        _ctypes.CDLL(_dll_path)
-                        _preload_log.append(f"OK: {_dll_name}")
-                    except Exception as _e:
-                        _preload_log.append(f"FAIL {_dll_name}: {_e}")
-        # Try Python import first
+            # Load shared providers DLL
+            _prov_path = os.path.join(_capi, "onnxruntime_providers_shared.dll")
+            if os.path.exists(_prov_path):
+                try:
+                    _ctypes.CDLL(_prov_path)
+                    _preload_log.append("OK: onnxruntime_providers_shared.dll")
+                except Exception as _e:
+                    _preload_log.append(f"FAIL providers: {_e}")
+            # Load main DLL with restricted DLL search path
+            _ort_path = os.path.join(_capi, "onnxruntime.dll")
+            if os.path.exists(_ort_path):
+                _kernel32 = _ctypes.WinDLL("kernel32", use_last_error=True)
+                _handle = _kernel32.LoadLibraryExW(_ort_path, None, 0x900)
+                if _handle:
+                    _preload_log.append("OK: onnxruntime.dll")
+                else:
+                    _preload_log.append(f"FAIL onnxruntime.dll: err {_ctypes.get_last_error()}")
+        # Try Python import
         try:
             import onnxruntime as ort
             _preload_log.append("OK: import onnxruntime")
