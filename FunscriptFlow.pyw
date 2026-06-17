@@ -24,11 +24,17 @@ try:
     from tkinter import filedialog, messagebox
     import tkinter.ttk as ttk
     try:
-        # Load onnxruntime via C API directly, bypassing Python .pyd import
         _capi = os.path.join(EXE_DIR, "onnxruntime", "capi")
         _preload_log = []
-        _ort = None
         if os.path.isdir(_capi):
+            # Copy MSVC runtime DLLs into capi so onnxruntime.dll finds its deps
+            for _dll in ["vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll"]:
+                _src = os.path.join(EXE_DIR, _dll)
+                _dst = os.path.join(_capi, _dll)
+                if os.path.exists(_src) and not os.path.exists(_dst):
+                    import shutil
+                    shutil.copy2(_src, _dst)
+                    _preload_log.append(f"COPIED {_dll} -> capi")
             import ctypes as _ctypes
             _dll_order = ["onnxruntime_providers_shared.dll", "onnxruntime.dll"]
             for _dll_name in _dll_order:
