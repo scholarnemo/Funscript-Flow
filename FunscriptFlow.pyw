@@ -16,7 +16,7 @@ if hasattr(os, 'add_dll_directory'):
     except Exception:
         pass
 
-HAS_ONNX = False  # kept for compatibility, actual check in Detector class
+HAS_ONNX = False
 try:
     import gc
     import math, threading, concurrent.futures
@@ -26,74 +26,6 @@ try:
     import tkinter as tk
     from tkinter import filedialog, messagebox
     import tkinter.ttk as ttk
-    try:
-        _capi = os.path.join(EXE_DIR, "onnxruntime", "capi")
-        _preload_log = []
-        if os.path.isdir(_capi):
-            # Copy MSVC runtime DLLs into capi so onnxruntime.dll finds its deps
-            for _dll in ["vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll"]:
-                _src = os.path.join(EXE_DIR, _dll)
-                _dst = os.path.join(_capi, _dll)
-                if os.path.exists(_src) and not os.path.exists(_dst):
-                    import shutil
-                    shutil.copy2(_src, _dst)
-                    _preload_log.append(f"COPIED {_dll} -> capi")
-            import ctypes as _ctypes
-            # Load shared providers DLL
-            _prov_path = os.path.join(_capi, "onnxruntime_providers_shared.dll")
-            if os.path.exists(_prov_path):
-                try:
-                    _ctypes.CDLL(_prov_path)
-                    _preload_log.append("OK: onnxruntime_providers_shared.dll")
-                except Exception as _e:
-                    _preload_log.append(f"FAIL providers: {_e}")
-            # Load main DLL with restricted DLL search path
-            _ort_path = os.path.join(_capi, "onnxruntime.dll")
-            if os.path.exists(_ort_path):
-                _kernel32 = _ctypes.WinDLL("kernel32", use_last_error=True)
-                _handle = _kernel32.LoadLibraryExW(_ort_path, None, 0x900)
-                if _handle:
-                    _preload_log.append("OK: onnxruntime.dll")
-                else:
-                    _preload_log.append(f"FAIL onnxruntime.dll: err {_ctypes.get_last_error()}")
-        # Try Python import
-        try:
-            import onnxruntime as ort
-            _preload_log.append("OK: import onnxruntime")
-            HAS_ONNX = True
-        except Exception as _e:
-            _preload_log.append(f"FAIL import onnxruntime: {_e}")
-        with open(STUB_LOG, "a") as f:
-            f.write("--- onnx preload ---\n")
-            for _line in _preload_log:
-                f.write(_line + "\n")
-            f.write("--- capi files ---\n")
-            _ort_dir = os.path.join(EXE_DIR, "onnxruntime")
-            if os.path.isdir(_ort_dir):
-                for root, dirs, files in os.walk(_ort_dir):
-                    for _f in sorted(files):
-                        f.write(os.path.join(root, _f) + "\n")
-            f.write("--- all DLLs in exe dir ---\n")
-            for _f in sorted(os.listdir(EXE_DIR)):
-                if _f.lower().endswith(('.dll', '.pyd')):
-                    f.write(_f + "\n")
-            f.write("--- all DLLs in exe dir ---\n")
-            for _f in sorted(os.listdir(EXE_DIR)):
-                if _f.lower().endswith(('.dll', '.pyd')):
-                    f.write(_f + "\n")
-    except Exception as e:
-        _onnx_files = []
-        for root, dirs, files in os.walk(EXE_DIR):
-            for f in files:
-                if 'onnx' in f.lower():
-                    _onnx_files.append(os.path.join(root, f))
-        err_msg = f"onnxruntime import failed: {e}\nFiles: {_onnx_files[:20]}"
-        try:
-            with open(STUB_LOG, "a") as f:
-                f.write(err_msg + "\n")
-        except Exception:
-            pass
-
 except Exception:
     try:
         with open(STUB_LOG, "w") as f:
