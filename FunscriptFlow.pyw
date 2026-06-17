@@ -50,6 +50,10 @@ try:
             f.write("--- onnx preload ---\n")
             for _line in _preload_log:
                 f.write(_line + "\n")
+            f.write("--- capi files ---\n")
+            if os.path.isdir(_capi):
+                for _f in sorted(os.listdir(_capi)):
+                    f.write(_f + "\n")
             f.write("--- all DLLs in exe dir ---\n")
             for _f in sorted(os.listdir(EXE_DIR)):
                 if _f.lower().endswith(('.dll', '.pyd')):
