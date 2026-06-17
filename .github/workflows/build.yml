@@ -47,8 +47,7 @@ jobs:
           if (Test-Path detector.onnx) { copy detector.onnx FunscriptFlow.dist\detector.onnx }
           if (Test-Path 320n.onnx) { copy 320n.onnx FunscriptFlow.dist\320n.onnx }
           if (Test-Path 640m.onnx) { copy 640m.onnx FunscriptFlow.dist\640m.onnx }
-          if (Test-Path ort\) { xcopy /E /I ort FunscriptFlow.dist\ort\ }
-          if (Test-Path ort\) { xcopy /E /I ort FunscriptFlow.dist\ort\ }
+          if (Test-Path ort\) { xcopy /E /I /Y ort FunscriptFlow.dist\ort\ }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
