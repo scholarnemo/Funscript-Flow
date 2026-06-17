@@ -16,7 +16,7 @@ if hasattr(os, 'add_dll_directory'):
     except Exception:
         pass
 
-HAS_ONNX = False
+HAS_ONNX = False  # kept for compatibility, actual check in Detector class
 try:
     import gc
     import math, threading, concurrent.futures
@@ -210,35 +210,47 @@ def radial_motion_weighted(flow, center, is_cut, pov_mode=False, balance_global=
 
 
 class Detector:
-    # NudeNet 320n class indices:
-    # 14 = MALE_GENITALIA_EXPOSED, 4 = FEMALE_GENITALIA_EXPOSED
-    # 1 = FACE_FEMALE, 12 = FACE_MALE
     NUDENET_PENIS_CLASSES = {4, 14}
     NUDENET_FACE_CLASSES = {1, 12}
-    # Custom model class indices (override when using a custom-trained model)
     CUSTOM_PENIS_CLASSES = {0}
     CUSTOM_FACE_CLASSES = {1}
 
     def __init__(self, model_path="detector.onnx"):
         self.model = None
         self.enabled = False
+        self.input_size = (640, 640)
+        self.input_name = "images"
         self.use_nudenet = "nudenet" in model_path.lower() or "320n" in model_path.lower() or "640m" in model_path.lower()
-        if not HAS_ONNX or not os.path.exists(model_path):
+        if not os.path.exists(model_path):
             return
         try:
+            # Replace pip-installed ORT DLLs with official Microsoft builds
+            _ort_src = os.path.join(EXE_DIR, "ort")
+            _ort_dst = os.path.join(EXE_DIR, "onnxruntime", "capi")
+            if os.path.isdir(_ort_src) and os.path.isdir(_ort_dst):
+                import shutil
+                for _f in os.listdir(_ort_src):
+                    if _f.endswith(".dll"):
+                        _src = os.path.join(_ort_src, _f)
+                        _dst = os.path.join(_ort_dst, _f)
+                        try:
+                            shutil.copy2(_src, _dst)
+                        except Exception:
+                            pass
+            import onnxruntime as ort
             self.model = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
             self.input_name = self.model.get_inputs()[0].name
-            input_shape = self.model.get_inputs()[0].shape
-            self.input_size = (int(input_shape[2]), int(input_shape[3]))
+            self.input_size = self.model.get_inputs()[0].shape[2:]
             self.enabled = True
         except Exception:
             self.model = None
             self.enabled = False
 
     def detect(self, frame_gray):
-        if not self.enabled:
+        if not self.enabled or not self.model:
             return None, None
         try:
+            h, w = frame_gray.shape
             img = cv2.resize(frame_gray, self.input_size)
             img = img.astype(np.float32) / 255.0
             if len(img.shape) == 2:
@@ -246,7 +258,6 @@ class Detector:
             img = np.transpose(img, (2, 0, 1))
             img = np.expand_dims(img, axis=0)
             outputs = self.model.run(None, {self.input_name: img})[0]
-            h, w = frame_gray.shape
             penis_box = None
             face_box = None
             penis_classes = self.NUDENET_PENIS_CLASSES if self.use_nudenet else self.CUSTOM_PENIS_CLASSES
@@ -439,7 +450,7 @@ def process_video(video_path, params, log_func, progress_callback=None, cancel_f
             break
     if detector_model is None:
         detector_model = model_candidates[0]  # default, will fail gracefully
-    if detection_enabled and HAS_ONNX:
+    if detection_enabled:
         detector = Detector(detector_model)
         if detector.enabled:
             log_func("Detection: enabled")
@@ -911,10 +922,8 @@ class App:
             return
         self.overall_progress.configure(value=0)
         self.video_progress.configure(value=0)
-        if settings.get("detection_enabled", True) and HAS_ONNX:
+        if settings.get("detection_enabled", True):
             self.lbl_detect_status.config(text="Detector: enabled")
-        elif settings.get("detection_enabled", True):
-            self.lbl_detect_status.config(text="Detector: onnxruntime not installed")
         else:
             self.lbl_detect_status.config(text="Detector: disabled")
         disable_widgets_except(self.master, [self.btn_cancel])
