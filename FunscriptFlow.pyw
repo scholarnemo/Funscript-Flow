@@ -39,18 +39,21 @@ try:
                         _preload_log.append(f"OK: {_dll_name}")
                     except Exception as _e:
                         _preload_log.append(f"FAIL {_dll_name}: {_e}")
-            # Try Python import first, fall back to C API
-            try:
-                import onnxruntime as ort
-                _preload_log.append("OK: import onnxruntime")
-                HAS_ONNX = True
-            except Exception as _e:
-                _preload_log.append(f"FAIL import onnxruntime: {_e}")
-                _ort = _ctypes.CDLL(os.path.join(_capi, "onnxruntime.dll"))
+        # Try Python import first
+        try:
+            import onnxruntime as ort
+            _preload_log.append("OK: import onnxruntime")
+            HAS_ONNX = True
+        except Exception as _e:
+            _preload_log.append(f"FAIL import onnxruntime: {_e}")
         with open(STUB_LOG, "a") as f:
             f.write("--- onnx preload ---\n")
             for _line in _preload_log:
                 f.write(_line + "\n")
+            f.write("--- all DLLs in exe dir ---\n")
+            for _f in sorted(os.listdir(EXE_DIR)):
+                if _f.lower().endswith(('.dll', '.pyd')):
+                    f.write(_f + "\n")
             f.write("--- all DLLs in exe dir ---\n")
             for _f in sorted(os.listdir(EXE_DIR)):
                 if _f.lower().endswith(('.dll', '.pyd')):
