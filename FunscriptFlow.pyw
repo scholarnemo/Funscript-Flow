@@ -5,6 +5,9 @@ import sys, os, traceback, json, argparse  # stdlib only, safe to import
 STUB_LOG = os.path.join(os.path.dirname(sys.argv[0]) if sys.argv else ".", "startup.log")
 EXE_DIR = os.path.dirname(sys.argv[0]) if sys.argv and os.path.dirname(sys.argv[0]) else "."
 
+# Disable GPU providers to avoid DLL init failures from missing DirectX
+os.environ["ORT_DISABLE_DIRECTML"] = "1"
+
 # Nuitka puts DLLs in the exe directory — add to PATH so native library loaders find them
 os.environ["PATH"] = EXE_DIR + os.pathsep + os.environ.get("PATH", "")
 if hasattr(os, 'add_dll_directory'):
