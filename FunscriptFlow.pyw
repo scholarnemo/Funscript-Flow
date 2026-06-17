@@ -177,6 +177,16 @@ class Detector:
         except Exception:
             self.model = None
             self.enabled = False
+            try:
+                import traceback as _tb
+                with open(STUB_LOG, "a") as _f:
+                    _f.write(f"--- Detector init failed for {model_path} ---\n")
+                    _f.write(f"EXE_DIR DLLs: {len([x for x in os.listdir(EXE_DIR) if x.endswith('.dll')])}\n")
+                    _f.write(f"ort/ exists: {os.path.isdir(os.path.join(EXE_DIR, 'ort'))}\n")
+                    _f.write(f"capi/ exists: {os.path.isdir(os.path.join(EXE_DIR, 'onnxruntime', 'capi'))}\n")
+                    _tb.print_exc(file=_f)
+            except Exception:
+                pass
 
     def detect(self, frame_gray):
         if not self.enabled or not self.model:
