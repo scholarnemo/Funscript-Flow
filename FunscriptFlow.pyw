@@ -5,18 +5,9 @@ import sys, os, traceback, json, argparse  # stdlib only, safe to import
 STUB_LOG = os.path.join(os.path.dirname(sys.argv[0]) if sys.argv else ".", "startup.log")
 EXE_DIR = os.path.dirname(sys.argv[0]) if sys.argv and os.path.dirname(sys.argv[0]) else "."
 
-# Disable GPU providers to avoid DLL init failures from missing DirectX
-os.environ["ORT_DISABLE_DIRECTML"] = "1"
-
 # Nuitka puts DLLs in the exe directory — add to PATH so native library loaders find them
 os.environ["PATH"] = EXE_DIR + os.pathsep + os.environ.get("PATH", "")
-if hasattr(os, 'add_dll_directory'):
-    try:
-        os.add_dll_directory(EXE_DIR)
-    except Exception:
-        pass
 
-HAS_ONNX = False
 try:
     import gc
     import math, threading, concurrent.futures
@@ -148,48 +139,60 @@ class Detector:
     CUSTOM_FACE_CLASSES = {1}
 
     def __init__(self, model_path="detector.onnx"):
-        self.model = None
+        self._net = None
         self.enabled = False
         self.input_size = (640, 640)
-        self.input_name = "images"
         self.use_nudenet = "nudenet" in model_path.lower() or "320n" in model_path.lower() or "640m" in model_path.lower()
         if not os.path.exists(model_path):
             return
         try:
-            # Replace pip-installed ORT DLLs with official Microsoft builds
-            _ort_src = os.path.join(EXE_DIR, "ort")
-            _ort_dst = os.path.join(EXE_DIR, "onnxruntime", "capi")
-            if os.path.isdir(_ort_src) and os.path.isdir(_ort_dst):
-                import shutil
-                for _f in os.listdir(_ort_src):
-                    if _f.endswith(".dll"):
-                        _src = os.path.join(_ort_src, _f)
-                        _dst = os.path.join(_ort_dst, _f)
-                        try:
-                            shutil.copy2(_src, _dst)
-                        except Exception:
-                            pass
-            import onnxruntime as ort
-            self.model = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
-            self.input_name = self.model.get_inputs()[0].name
-            self.input_size = self.model.get_inputs()[0].shape[2:]
+            self._net = cv2.dnn.readNetFromONNX(model_path)
+            self._net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+            self._net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
             self.enabled = True
         except Exception:
-            self.model = None
+            self._net = None
             self.enabled = False
             try:
                 import traceback as _tb
                 with open(STUB_LOG, "a") as _f:
-                    _f.write(f"--- Detector init failed for {model_path} ---\n")
-                    _f.write(f"EXE_DIR DLLs: {len([x for x in os.listdir(EXE_DIR) if x.endswith('.dll')])}\n")
-                    _f.write(f"ort/ exists: {os.path.isdir(os.path.join(EXE_DIR, 'ort'))}\n")
-                    _f.write(f"capi/ exists: {os.path.isdir(os.path.join(EXE_DIR, 'onnxruntime', 'capi'))}\n")
+                    _f.write(f"--- Detector init failed ---\n")
                     _tb.print_exc(file=_f)
             except Exception:
                 pass
 
     def detect(self, frame_gray):
-        if not self.enabled or not self.model:
+        if not self.enabled or not self._net:
+            return None, None
+        try:
+            h, w = frame_gray.shape
+            rgb = cv2.cvtColor(frame_gray, cv2.COLOR_GRAY2RGB)
+            blob = cv2.dnn.blobFromImage(rgb, 1.0/255.0, self.input_size, swapRB=True)
+            self._net.setInput(blob)
+            outputs = self._net.forward()
+            outputs = outputs.reshape(-1, 6) if outputs.ndim == 3 else outputs
+            penis_box = None
+            face_box = None
+            penis_classes = self.NUDENET_PENIS_CLASSES if self.use_nudenet else self.CUSTOM_PENIS_CLASSES
+            face_classes = self.NUDENET_FACE_CLASSES if self.use_nudenet else self.CUSTOM_FACE_CLASSES
+            for det in outputs:
+                x1, y1, x2, y2, conf, cls = det[:6]
+                x1 = int(x1 * w / self.input_size[0])
+                y1 = int(y1 * h / self.input_size[1])
+                x2 = int(x2 * w / self.input_size[0])
+                y2 = int(y2 * h / self.input_size[1])
+                cls = int(cls)
+                if conf < 0.4:
+                    continue
+                box = (max(0, x1), max(0, y1), min(w, x2), min(h, y2), conf)
+                if cls in penis_classes:
+                    if penis_box is None or conf > penis_box[4]:
+                        penis_box = box
+                elif cls in face_classes:
+                    if face_box is None or conf > face_box[4]:
+                        face_box = box
+            return penis_box, face_box
+        except Exception:
             return None, None
         try:
             h, w = frame_gray.shape
@@ -199,7 +202,7 @@ class Detector:
                 img = np.stack([img, img, img], axis=-1)
             img = np.transpose(img, (2, 0, 1))
             img = np.expand_dims(img, axis=0)
-            outputs = self.model.run(None, {self.input_name: img})[0]
+            outputs = self._sess.run(None, {self.input_name: img})[0]
             penis_box = None
             face_box = None
             penis_classes = self.NUDENET_PENIS_CLASSES if self.use_nudenet else self.CUSTOM_PENIS_CLASSES
